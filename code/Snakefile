@@ -1,0 +1,294 @@
+# to run (from project root):
+#   snakemake -s ./code/Snakefile --cores 6
+# how to run up to a specific step:
+#   snakemake -s ./code/Snakefile --cores 6 preprocess
+from pathlib import Path
+
+# --- Setup: Define constants for directories and scripts ---------------------------------------------------------
+# directory structure
+L0A_RAW_DIR         = "L0a_raw"
+L0B_CONVERTED_DIR    = "L0b_converted"
+L0C_INGESTED_DIR    = "L0c_ingested"
+L1_PREPROCESSED_DIR = "L1_preprocessed"
+L2_EDDYPRO_DIR      = "L2_eddypro_outputs"
+L3_POSTPROC_DIR    = "L3_postproc"
+SCRIPTS_DIR         = "code/scripts"
+CONFIGS_DIR         = "code/configs"
+LOG_DIR = "logs"
+
+# scripts
+CHECKSUM_SCRIPT = f"{SCRIPTS_DIR}/checksum.py"
+CONVERT_SCRIPT = f"{SCRIPTS_DIR}/convert.py"
+COMPUTE_CONCAT_MAPPING_SCRIPT = f"{SCRIPTS_DIR}/compute_concat_mapping.py"
+EXECUTE_CONCAT_SCRIPT = f"{SCRIPTS_DIR}/execute_concat.py"
+PREPROCESS_FAST_SCRIPT = f"{SCRIPTS_DIR}/preprocess_fast.py"
+PREPROCESS_BIOMET_SCRIPT = f"{SCRIPTS_DIR}/preprocess_biomet.py"
+CONFIGURE_EDDYPRO_SCRIPT = f"{SCRIPTS_DIR}/configure_eddypro.py"
+POSTPROCESS_EDDYPRO_SCRIPT = f"{SCRIPTS_DIR}/postproc.py"
+
+# parameters for processing steps
+EDDYPRO_RP = "eddypro_rp"  # make sure this is in the PATH or provide the full path to the executable
+EDDYPRO_FCC = "eddypro_fcc"  # make sure this is in the PATH or provide the full path to the executable
+EDDYPRO_PROJECT_NAME = "wrtbi_main"
+EDDYPRO_RUN_ID = "run_001"
+EDDYPRO_TEMPLATE = f"{CONFIGS_DIR}/wrtbi-template.eddypro"
+EDDYPRO_SYSTEM = "mac"  # or "Windows", "MacOS", etc depending on the system EddyPro is running on
+
+# other constants and parameters
+FILE_TYPES = ["Fast", "SlowRaw", "SlowStats"]
+AQ_FREQS = {
+    "Fast": "50ms",
+    "SlowRaw": "300s",
+    "SlowStats": "30min"
+}
+FILE_TIME_SPANS = {
+    "Fast": "1D",
+    "SlowRaw": "7D",
+    "SlowStats": "7D"
+}
+
+# create directories
+Path(L0A_RAW_DIR).mkdir(parents=True, exist_ok=True)
+Path(L0B_CONVERTED_DIR).mkdir(parents=True, exist_ok=True)
+Path(L0C_INGESTED_DIR).mkdir(parents=True, exist_ok=True)
+for ft in FILE_TYPES:
+    Path(f"{L0C_INGESTED_DIR}/{ft}").mkdir(parents=True, exist_ok=True)
+Path(L1_PREPROCESSED_DIR).mkdir(parents=True, exist_ok=True)
+Path(L2_EDDYPRO_DIR).mkdir(parents=True, exist_ok=True)
+Path(L3_POSTPROC_DIR).mkdir(parents=True, exist_ok=True)
+Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
+
+rule all:
+    input:
+        f"{L3_POSTPROC_DIR}/postproc.parquet"
+
+
+# --- Step 1: Convert TOB3 to feather ---------------------------------------------------------
+# To avoid name collisions in the output directory, we need to give the output files unique names. 
+DL_DIRS, RAW_STEMS = glob_wildcards(f"{L0A_RAW_DIR}/{{download_dir}}/data/{{rawstem}}.dat")
+CONVERTED_STEMS = [f"{dl}_{rs}" for dl, rs in zip(DL_DIRS, RAW_STEMS)]
+CONV_STEM_TO_RAW = {
+    conv_stem: f"{L0A_RAW_DIR}/{dl}/data/{rs}.dat"
+    for conv_stem, dl, rs in zip(CONVERTED_STEMS, DL_DIRS, RAW_STEMS)
+}
+rule convert:
+    input:
+        data = lambda wildcards: CONV_STEM_TO_RAW[wildcards.conv_stem],
+        script=CONVERT_SCRIPT,
+    output:
+        f"{L0B_CONVERTED_DIR}/{{conv_stem}}.feather",
+    log:
+        f"{LOG_DIR}/convert/{{conv_stem}}.log"
+    shell:
+        """
+        python {input.script} \
+            --file {input.data} \
+            --output {output} \
+            > {log} 2>&1  # redirect stdout and stderr to log file
+        """
+
+# --- Step 2: Concatenate feather files by time interval ---------------------------------------------------------
+# first, build a mapping from output file name to input files that should be concatenated to make it.
+# we run this as a checkpoint so that it blocks evaluation of the next rule until we have the mapping available.
+
+# map filetype (SlowRaw, Summary, etc) -> list of output stems belonging to that type
+TYPE_TO_STEMS = {
+    ft: [s for s in CONVERTED_STEMS if ft in s]
+    for ft in FILE_TYPES
+}
+checkpoint compute_concat_mapping:
+    input:
+        # segregate the input files by processing type
+        data = lambda wildcards: expand(
+            f"{L0B_CONVERTED_DIR}/{{stem}}.feather",
+            stem=TYPE_TO_STEMS[wildcards.filetype]
+        ),
+        script = COMPUTE_CONCAT_MAPPING_SCRIPT
+    output:
+        f"{L0C_INGESTED_DIR}/concat_mapping_{{filetype}}.json"  # is there a better place to keep this file? Maybe a directory for intermediate/tracking files?
+    params:
+        file_time_span = lambda wildcards: FILE_TIME_SPANS[wildcards.filetype],
+        aq_freq = lambda wildcards: AQ_FREQS[wildcards.filetype],
+    log:
+        f"{LOG_DIR}/compute_concat_mapping/{{filetype}}.log"
+    shell:
+        """
+        python {input.script} \
+            --input_files {input.data} \
+            --file_time_span {params.file_time_span} \
+            --aq_freq {params.aq_freq} \
+            --output_file {output} \
+            > {log} 2>&1
+        """
+
+def get_concat_outputs(wildcards):
+    checkpoints.compute_concat_mapping.get(filetype=wildcards.filetype)
+    import json
+    with open(f"{L0C_INGESTED_DIR}/concat_mapping_{wildcards.filetype}.json", "r") as f:
+        concat_mapping = json.load(f)
+    return [f"{L0C_INGESTED_DIR}/{wildcards.filetype}/{out_stem}.feather" for out_stem in concat_mapping.keys()]
+def get_concat_inputs(wildcards):
+    checkpoints.compute_concat_mapping.get(filetype=wildcards.filetype)
+    import json
+    with open(f"{L0C_INGESTED_DIR}/concat_mapping_{wildcards.filetype}.json", "r") as f:
+        concat_mapping = json.load(f)
+    return concat_mapping[wildcards.concat_stem]
+
+rule execute_concat:
+    input:
+        data = get_concat_inputs,
+        script = EXECUTE_CONCAT_SCRIPT
+    output:
+        f"{L0C_INGESTED_DIR}/{{filetype}}/{{concat_stem}}.feather",
+    params:
+        file_time_span = lambda wildcards: FILE_TIME_SPANS[wildcards.filetype],
+        aq_freq = lambda wildcards: AQ_FREQS[wildcards.filetype]
+    log:
+        f"{LOG_DIR}/execute_concat/{{filetype}}/{{concat_stem}}.log"
+    shell:
+        """
+        python {input.script} \
+            --input_files {input.data} \
+            --out_file {output} \
+            --file_timespan {params.file_time_span} \
+            --aq_freq {params.aq_freq} \
+            > {log} 2>&1
+        """
+
+# --- Step 3: Preprocess ingested files with quality control and spike removal before moving on to EddyPro --------------------------------------------------------
+rule preprocess_fast:
+    input:
+        data = f"{L0C_INGESTED_DIR}/Fast/{{concat_stem}}.feather",
+        script = PREPROCESS_FAST_SCRIPT
+    output:
+        f"{L1_PREPROCESSED_DIR}/fast_for_eddypro/{{concat_stem}}.csv"
+    log: 
+        f"{LOG_DIR}/preprocess_fast/{{concat_stem}}.log"
+    shell:
+        """
+        python {input.script} \
+            --input_file {input.data} \
+            --output_file {output} \
+            > {log} 2>&1
+        """
+
+rule preprocess_biomet:
+    input:
+        raw_data = f"{L0C_INGESTED_DIR}/SlowRaw/{{concat_stem}}.feather",
+        stats_data = f"{L0C_INGESTED_DIR}/SlowStats/{{concat_stem}}.feather",
+        script = PREPROCESS_BIOMET_SCRIPT
+    output:
+        f"{L1_PREPROCESSED_DIR}/biomet_for_eddypro/{{concat_stem}}.csv"
+    log:
+        f"{LOG_DIR}/preprocess_biomet/{{concat_stem}}.log"
+    shell:
+        """
+        python {input.script} \
+            --raw_file {input.raw_data} \
+            --stats_file {input.stats_data} \
+            --output_file {output} \
+            > {log} 2>&1
+        """
+
+# --- Step 4: Run EddyPro on preprocessed files to get flux estimates ---------------------------------------------------------
+def get_preprocessed_fast_files(wildcards):
+    checkpoints.compute_concat_mapping.get(filetype="Fast")
+    import json
+    with open(f"{L0C_INGESTED_DIR}/concat_mapping_Fast.json") as f:
+        mapping = json.load(f)
+    return [f"{L1_PREPROCESSED_DIR}/fast_for_eddypro/{stem}.csv" for stem in mapping.keys()]
+def get_preprocessed_biomet_files(wildcards):
+    checkpoints.compute_concat_mapping.get(filetype="SlowRaw")
+    import json
+    with open(f"{L0C_INGESTED_DIR}/concat_mapping_SlowRaw.json") as f:
+        mapping = json.load(f)
+    return [f"{L1_PREPROCESSED_DIR}/biomet_for_eddypro/{stem}.csv" for stem in mapping.keys()]
+
+# dummy rule to group the preprocessing steps together. This makes it easier to specify dependencies for the next step (EddyPro) without having to worry about the individual preprocessing rules.
+rule preprocess:
+    input:
+        fast = get_preprocessed_fast_files,
+        biomet = get_preprocessed_biomet_files,
+
+rule configure_eddypro:
+    input:
+        fast_files = get_preprocessed_fast_files,
+        biomet_files = get_preprocessed_biomet_files,
+        script = CONFIGURE_EDDYPRO_SCRIPT,
+        template = EDDYPRO_TEMPLATE,
+    output:
+        f"{CONFIGS_DIR}/eddypro_configs/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.eddypro"
+    params:
+        run_id = EDDYPRO_RUN_ID,
+        project_title = EDDYPRO_PROJECT_NAME,
+    log:
+        f"{LOG_DIR}/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.log"
+    shell:
+        """
+        python {input.script} \
+            --fast_files {input.fast_files} \
+            --biomet_files {input.biomet_files} \
+            --template {input.template} \
+            --output_file {output} \
+            --run_id {params.run_id} \
+            --project_title {params.project_title} \
+            > {log} 2>&1
+        """
+
+rule run_eddypro:
+    input:
+        project_file = f"{CONFIGS_DIR}/eddypro_configs/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.eddypro",
+    output:
+        sentinel = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}/.eddypro_done"
+    params:
+        out_dir = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}",
+        system  = EDDYPRO_SYSTEM,
+        eddypro_rp = EDDYPRO_RP,
+        eddypro_fcc = EDDYPRO_FCC,
+    log:
+        f"logs/eddypro_{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.log"
+    shell:
+        """
+        mkdir -p {params.out_dir}/tmp  # required for EddyPro to run
+        {params.eddypro_rp} \
+            -s {params.system} \
+            -m desktop \
+            -c console \
+            -e {params.out_dir} \
+            {input.project_file} \
+            > {log} 2>&1
+
+        {params.eddypro_fcc} \
+            -s {params.system} \
+            -m desktop \
+            -c console \
+            -e {params.out_dir} \
+            {input.project_file} \
+            >> {log} 2>&1
+
+        touch {output.sentinel}
+        """
+
+# --- Step 5: post-process EddyPro outputs with quality control and gap filling ---------------------------------------------------------
+# TODO: we need a better way to detect which output files to process here. Right now it's hardcoded
+# that we just process everything in the output directory. I'd rather just process new outputs, then concatenate them later
+# in a final step.
+rule postprocess_eddypro:
+    input:
+        eddypro_output = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}/.eddypro_done",
+        script = POSTPROCESS_EDDYPRO_SCRIPT
+    output:
+        f"{L3_POSTPROC_DIR}/postproc.parquet"
+    params:
+        run_id = EDDYPRO_RUN_ID,
+    log:
+        f"{LOG_DIR}/postprocess_eddypro.log"
+    shell:
+        """
+        python {input.script} \
+            --ep_out_dir {L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME} \
+            --run_id {params.run_id} \
+            --output_file {output} \
+            > {log} 2>&1
+        """
+    

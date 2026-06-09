@@ -1,0 +1,13 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+venv/
+__pycache__/
+*.pyc
+
+L0*/
+L1*/
+L2*/
+L3*/
+**/*.log
+.snakemake/
+
+preliminary_footprint_analysis/

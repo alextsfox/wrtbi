@@ -1,0 +1,22 @@
+Planar_fit_results
+Number_of_selected_wind_sectors:   2
+Minimum_number_of_data_per_wind_sector:    3
+Maximum_average_vertical_wind_component_(m/s):  0.50
+Minimum_average_horizontal_wind_component_(m/s):  0.50
+Beginning_of_planar_fit_determination_period: 2026-03-26
+End_of_planar_fit_determination_period: 2026-04-19
+
+Fitting planes coefficients
+ WindSector       Degrees               B0            B1            B2
+          1        0- 180        0.0146220    -0.0451878    -0.0705579
+          2      180- 360       -0.0088889    -0.0018215    -0.0436284
+
+Rotation matrices
+Sector number  1; angle:    0 - 180  sector numerosity:  342
+    0.998986    -0.003169    -0.044918
+    0.000000     0.997520    -0.070383
+    0.045030     0.070312     0.996508
+Sector number  2; angle:  180 - 360  sector numerosity:  727
+    0.999998    -0.000079    -0.001818
+    0.000000     0.999050    -0.043587
+    0.001820     0.043587     0.999048
