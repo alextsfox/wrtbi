@@ -21,7 +21,8 @@ def main():
     parser.add_argument("--output", type=Path, help="Output .parquet file path.")
     args = parser.parse_args()
 
-    with tempfile.TemporaryDirectory(prefix="convert_") as tmp:
+    # use a temporary directory to avoid file collisions
+    with tempfile.TemporaryDirectory(prefix="tmp_", dir=args.output.parent) as tmp:
         converted_file = next(c2a.camp2ascii([args.file], Path(tmp), pbar=True, verbose=1, n_invalid=10, output_format=2))
         converted_file.rename(args.output)
 
