@@ -5,9 +5,9 @@
 from pathlib import Path
 import platform
 
-conda: "ec-workflow"
+conda: "envs/main.yaml"
 
-# --- Setup: Define constants for directories and scripts ---------------------------------------------------------
+# --- User-specified parameters ---------------------------------------------------------
 # directory structure
 L0A_RAW_DIR         = "L0a_raw"
 L0B_CONVERTED_DIR    = "L0b_converted"
@@ -18,9 +18,9 @@ L3_POSTPROC_DIR    = "L3_postproc"
 SCRIPTS_DIR         = "code/scripts"
 CONFIGS_DIR         = "code/configs"
 LOG_DIR = "logs"
+SOFTWARE_DIR = "software"
 
 # scripts
-CHECKSUM_SCRIPT = f"{SCRIPTS_DIR}/checksum.py"
 CONVERT_SCRIPT = f"{SCRIPTS_DIR}/convert.py"
 COMPUTE_CONCAT_MAPPING_SCRIPT = f"{SCRIPTS_DIR}/compute_concat_mapping.py"
 EXECUTE_CONCAT_SCRIPT = f"{SCRIPTS_DIR}/execute_concat.py"
@@ -29,17 +29,19 @@ PREPROCESS_BIOMET_SCRIPT = f"{SCRIPTS_DIR}/preprocess_biomet.py"
 CONFIGURE_EDDYPRO_SCRIPT = f"{SCRIPTS_DIR}/configure_eddypro.py"
 POSTPROCESS_EDDYPRO_SCRIPT = f"{SCRIPTS_DIR}/postproc.py"
 
-# parameters for processing steps
-EDDYPRO_RP = "eddypro_rp"  # make sure this is in the PATH or provide the full path to the executable
-EDDYPRO_FCC = "eddypro_fcc"  # make sure this is in the PATH or provide the full path to the executable
-EDDYPRO_PROJECT_NAME = "wrtbi_main"
-EDDYPRO_RUN_ID = "run_001"
+# eddypro settings CHANGE ME
 EDDYPRO_TEMPLATE = f"{CONFIGS_DIR}/wrtbi-template.eddypro"
+EDDYPRO_RUN_ID = "run_001"
+EDDYPRO_PROJECT_NAME = "wrtbi_main"
+
+# ------------------- Automatically configured parameters (do not change) -------------------
 if platform.system() == "Linux":
     EDDYPRO_SYSTEM = "linux"
 elif platform.system() == "Darwin":
     EDDYPRO_SYSTEM = "mac"
-
+EDDYPRO_ENGINE_DIR = f"{SOFTWARE_DIR}/eddypro_engine"
+EDDYPRO_RP = f"{EDDYPRO_ENGINE_DIR}/bin/{EDDYPRO_SYSTEM}/eddypro_rp"  # make sure this is in the PATH or provide the full path to the executable
+EDDYPRO_FCC = f"{EDDYPRO_ENGINE_DIR}/bin/{EDDYPRO_SYSTEM}/eddypro_fcc"  # make sure this is in the PATH or provide the full path to the executable
 
 # other constants and parameters
 FILE_TYPES = ["Fast", "SlowRaw", "SlowStats"]
@@ -241,6 +243,24 @@ rule configure_eddypro:
             --project_title {params.project_title} \
             > {log} 2>&1
         """
+
+rule install_eddypro:
+    input:
+        f"{CONFIGS_DIR}/eddypro_configs/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.eddypro"  # output of configure_eddypro
+    output:
+        eddypro_rp = EDDYPRO_RP,
+        eddypro_fcc = EDDYPRO_FCC,
+    params:
+        install_dir = EDDYPRO_ENGINE_DIR,
+    log:
+        f"{LOG_DIR}/install_eddypro.log"
+    shell:
+        """
+        bash {SCRIPTS_DIR}/install_eddypro.sh \
+            --install-dir {params.install_dir} \
+            > {log} 2>&1
+        """
+
 
 rule run_eddypro:
     input:

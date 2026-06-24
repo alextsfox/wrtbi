@@ -10,4 +10,6 @@ L3*/
 **/*.log
 .snakemake/
 
+software/
+
 preliminary_footprint_analysis/

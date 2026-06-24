@@ -1,0 +1,17 @@
+name: ec-snakemake-workflow
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pyarrow
+  - pandas
+  - numpy
+  - matplotlib
+  - scipy
+  - tqdm
+  - pip
+  - make
+  - gfortran
+  - pip:
+      - camp2ascii
+      - hesseflux

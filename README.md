@@ -12,7 +12,7 @@ L0_raw/  # raw data presented exactly as it was collected from the datalogger, w
 |   │   ├── image_2.jpg
 
 ```shell
-snakemake -s ./code/Snakefile --cores 6  # or however many cores you want to use
+snakemake --use-conda --conda-frontend mamba --snakefile ./code/Snakefile --cores 6
 ```
 
 how to run up to a specific step:
