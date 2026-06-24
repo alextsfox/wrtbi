@@ -4,6 +4,8 @@
 #   snakemake -s ./code/Snakefile --cores 6 preprocess
 from pathlib import Path
 
+conda: "ec-workflow"
+
 # --- Setup: Define constants for directories and scripts ---------------------------------------------------------
 # directory structure
 L0A_RAW_DIR         = "L0a_raw"
