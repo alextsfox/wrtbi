@@ -3,6 +3,7 @@
 # how to run up to a specific step:
 #   snakemake -s ./code/Snakefile --cores 6 preprocess
 from pathlib import Path
+import platform
 
 conda: "ec-workflow"
 
@@ -34,7 +35,11 @@ EDDYPRO_FCC = "eddypro_fcc"  # make sure this is in the PATH or provide the full
 EDDYPRO_PROJECT_NAME = "wrtbi_main"
 EDDYPRO_RUN_ID = "run_001"
 EDDYPRO_TEMPLATE = f"{CONFIGS_DIR}/wrtbi-template.eddypro"
-EDDYPRO_SYSTEM = "mac"  # or "Windows", "MacOS", etc depending on the system EddyPro is running on
+if platform.system() == "Linux":
+    EDDYPRO_SYSTEM = "linux"
+elif platform.system() == "Darwin":
+    EDDYPRO_SYSTEM = "mac"
+
 
 # other constants and parameters
 FILE_TYPES = ["Fast", "SlowRaw", "SlowStats"]
