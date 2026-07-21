@@ -4,6 +4,7 @@
 #   snakemake -s ./code/Snakefile --cores 6 preprocess
 from pathlib import Path
 import platform
+from datetime import datetime
 
 conda: "envs/main.yaml"
 
@@ -33,6 +34,8 @@ POSTPROCESS_EDDYPRO_SCRIPT = f"{SCRIPTS_DIR}/postproc.py"
 EDDYPRO_TEMPLATE = f"{CONFIGS_DIR}/wrtbi-template.eddypro"
 EDDYPRO_RUN_ID = "run_001"
 EDDYPRO_PROJECT_NAME = "wrtbi_main"
+EP_RUN_CONFIG_DIR = f"{CONFIGS_DIR}/eddypro_configs/{datetime.now().strftime(r'%Y-%m-%dT%Hh%Mm%Ss%f')}"
+EP_OUTPUT_DIR = f"{L2_EDDYPRO_DIR}/{Path(EP_RUN_CONFIG_DIR).name}"
 
 # ------------------- Automatically configured parameters (do not change) -------------------
 if platform.system() == "Linux":
@@ -69,7 +72,7 @@ Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
 
 rule all:
     input:
-        f"{L3_POSTPROC_DIR}/postproc.parquet"
+        f"{EP_OUTPUT_DIR}/.eddypro_done"
 
 
 # --- Step 1: Convert TOB3 to feather ---------------------------------------------------------
@@ -219,6 +222,8 @@ rule preprocess:
         fast = get_preprocessed_fast_files,
         biomet = get_preprocessed_biomet_files,
 
+# create EddyPro configuration files based on the preprocessed data
+# several files may be generated if the processing spans multiple planar fit/spectral periods
 rule configure_eddypro:
     input:
         fast_files = get_preprocessed_fast_files,
@@ -226,27 +231,30 @@ rule configure_eddypro:
         script = CONFIGURE_EDDYPRO_SCRIPT,
         template = EDDYPRO_TEMPLATE,
     output:
-        f"{CONFIGS_DIR}/eddypro_configs/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.eddypro"
+        f"{EP_RUN_CONFIG_DIR}/.sentinel"
     params:
         run_id = EDDYPRO_RUN_ID,
         project_title = EDDYPRO_PROJECT_NAME,
+        output_dir = EP_RUN_CONFIG_DIR,
+        eddypro_output_path = EP_OUTPUT_DIR,
     log:
-        f"{LOG_DIR}/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.log"
+        f"{LOG_DIR}/configure_eddypro_{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.log"
     shell:
         """
         python {input.script} \
             --fast_files {input.fast_files} \
             --biomet_files {input.biomet_files} \
             --template {input.template} \
-            --output_file {output} \
+            --output_dir {params.output_dir} \
             --run_id {params.run_id} \
             --project_title {params.project_title} \
+            --eddypro_output_path {params.eddypro_output_path} \
             > {log} 2>&1
         """
 
 rule install_eddypro:
     input:
-        f"{CONFIGS_DIR}/eddypro_configs/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.eddypro"  # output of configure_eddypro
+        f"{EP_RUN_CONFIG_DIR}/.sentinel"  # output of configure_eddypro
     output:
         eddypro_rp = EDDYPRO_RP,
         eddypro_fcc = EDDYPRO_FCC,
@@ -264,60 +272,63 @@ rule install_eddypro:
 
 rule run_eddypro:
     input:
-        project_file = f"{CONFIGS_DIR}/eddypro_configs/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.eddypro",
-        eddypro_rp = EDDYPRO_RP,
+        config_sentinel = f"{EP_RUN_CONFIG_DIR}/.sentinel",
+        eddypro_rp  = EDDYPRO_RP,
         eddypro_fcc = EDDYPRO_FCC,
     output:
-        sentinel = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}/.eddypro_done"
+        sentinel = f"{EP_OUTPUT_DIR}/.eddypro_done"
     params:
-        out_dir = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}",
-        system  = EDDYPRO_SYSTEM,
-        eddypro_rp = EDDYPRO_RP,
-        eddypro_fcc = EDDYPRO_FCC,
+        out_dir     = EP_OUTPUT_DIR,
+        system      = EDDYPRO_SYSTEM,
+        configs_dir = EP_RUN_CONFIG_DIR,
     log:
-        f"logs/eddypro_{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.log"
+        f"{LOG_DIR}/eddypro_{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.log"
     shell:
         """
         mkdir -p {params.out_dir}/tmp  # required for EddyPro to run
-        {params.eddypro_rp} \
-            -s {params.system} \
-            -m desktop \
-            -c console \
-            -e {params.out_dir} \
-            {input.project_file} \
-            > {log} 2>&1
+        for project_file in {params.configs_dir}/*.eddypro; do
+            echo "--- Running eddypro_rp for: $project_file" >> {log}
+            {input.eddypro_rp} \
+                -s {params.system} \
+                -m desktop \
+                -c console \
+                -e {params.out_dir} \
+                "$project_file" \
+                >> {log} 2>&1
 
-        {params.eddypro_fcc} \
-            -s {params.system} \
-            -m desktop \
-            -c console \
-            -e {params.out_dir} \
-            {input.project_file} \
-            >> {log} 2>&1
+            echo "--- Running eddypro_fcc for: $project_file" >> {log}
+            {input.eddypro_fcc} \
+                -s {params.system} \
+                -m desktop \
+                -c console \
+                -e {params.out_dir} \
+                "$project_file" \
+                >> {log} 2>&1
+        done
 
         touch {output.sentinel}
         """
 
-# --- Step 5: post-process EddyPro outputs with quality control and gap filling ---------------------------------------------------------
-# TODO: we need a better way to detect which output files to process here. Right now it's hardcoded
-# that we just process everything in the output directory. I'd rather just process new outputs, then concatenate them later
-# in a final step.
-rule postprocess_eddypro:
-    input:
-        eddypro_output = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}/.eddypro_done",
-        script = POSTPROCESS_EDDYPRO_SCRIPT
-    output:
-        f"{L3_POSTPROC_DIR}/postproc.parquet"
-    params:
-        run_id = EDDYPRO_RUN_ID,
-    log:
-        f"{LOG_DIR}/postprocess_eddypro.log"
-    shell:
-        """
-        python {input.script} \
-            --ep_out_dir {L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME} \
-            --run_id {params.run_id} \
-            --output_file {output} \
-            > {log} 2>&1
-        """
+# # --- Step 5: post-process EddyPro outputs with quality control and gap filling ---------------------------------------------------------
+# # TODO: we need a better way to detect which output files to process here. Right now it's hardcoded
+# # that we just process everything in the output directory. I'd rather just process new outputs, then concatenate them later
+# # in a final step.
+# rule postprocess_eddypro:
+#     input:
+#         eddypro_output = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}/.eddypro_done",
+#         script = POSTPROCESS_EDDYPRO_SCRIPT
+#     output:
+#         f"{L3_POSTPROC_DIR}/postproc.parquet"
+#     params:
+#         run_id = EDDYPRO_RUN_ID,
+#     log:
+#         f"{LOG_DIR}/postprocess_eddypro.log"
+#     shell:
+#         """
+#         python {input.script} \
+#             --ep_out_dir {L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME} \
+#             --run_id {params.run_id} \
+#             --output_file {output} \
+#             > {log} 2>&1
+#         """
     

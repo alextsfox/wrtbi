@@ -2,7 +2,7 @@
 [FluxCorrection_SpectralAnalysis_General]
 add_sonic_lptf=1
 ex_dir=
-ex_file=/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/WyACT/wrtbi/L2_eddypro_outputs/eddypro_run_001_fluxnet_2026-07-20T113425_adv.csv
+ex_file=/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/WyACT/wrtbi/L2_eddypro_outputs/wrtbi-main/eddypro_test_fluxnet_2026-06-01T184119_adv.csv
 horst_lens=2
 sa_bin_spectra=/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/WyACT/wrtbi/L2_eddypro_outputs/wrtbi-main/eddypro_binned_cospectra
 sa_ch4_g1_start=1
@@ -107,7 +107,7 @@ out_mean_spec=0
 out_metadata=1
 out_path=/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/WyACT/wrtbi/L2_eddypro_outputs
 out_rich=1
-pr_end_date=2026-04-21
+pr_end_date=2026-07-20
 pr_end_time=23:30
 pr_start_date=2026-03-26
 pr_start_time=00:00
