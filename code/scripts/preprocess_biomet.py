@@ -13,8 +13,13 @@ import pandas as pd
 import numpy as np
 
 def preprocess_biomet_data(f: Path, args) -> None:
+    biomet = pd.read_feather(f)
+    if biomet.empty:
+        pd.DataFrame().to_csv(args.output_file, index=False, header=False, sep=",", float_format="%.5g")
+        return
+
     biomet = (
-        pd.read_feather(f)
+        biomet
         .replace([-9999, -7999, 7999, np.inf, -np.inf], np.nan)
         .reset_index(names="TIMESTAMP")
         .drop_duplicates(subset=["TIMESTAMP"], keep="last")

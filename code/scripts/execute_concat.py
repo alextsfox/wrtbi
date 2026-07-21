@@ -13,6 +13,7 @@ def main():
 
     if not args.input_files:
         print(f"No input files found for output stem {args.out_file.stem}. Skipping.")
+        pd.DataFrame().to_feather(args.out_file)
         return
     
     df = pd.concat([pd.read_feather(file) for file in args.input_files]).set_index("TIMESTAMP")

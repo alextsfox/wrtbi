@@ -12,8 +12,13 @@ import argparse
 import pandas as pd
 import numpy as np
 def preprocess_fast_data(f: Path, args) -> None:
+    fast = pd.read_feather(f)
+    if fast.empty:
+        pd.DataFrame().to_csv(args.output_file, index=False, header=False, sep=",", float_format="%.5g")
+        return
+
     fast = (
-        pd.read_feather(f)
+        fast
         .replace([-9999, -7999, 7999, np.inf, -np.inf], np.nan)
         .reset_index(names="TIMESTAMP")
         .drop_duplicates(subset=["TIMESTAMP"], keep="last")

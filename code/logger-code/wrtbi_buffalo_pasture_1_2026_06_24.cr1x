@@ -1,0 +1,564 @@
+' ==================================
+' WRTBI Headquarters EC tower code
+' Author: Alex Fox, afox18@uwyo.edu
+' Created: Feb. 2026
+' =================================
+
+PipeLineMode
+AngleDegrees
+PreserveVariables
+
+'=============================================================
+' User defined constants, saved in a table for later viewing
+'=============================================================
+ConstTable(Constants)
+    ' Program function constants
+    '==========================
+    Const FAST_INTV = 50  ' ms, scan interval for high frequency instruments
+    Const FAST_FREQ = 1000 INTDV FAST_INTV  ' Hz, frequency for high frequency instruments
+    Const FAST_SCAN_BUFFER_SIZE = 60 * (1000 INTDV FAST_INTV)  ' 60 second scan buffer
+    Const NDAYS_FAST_CRD = 1  ' Number of days to store in the fast data CRD file before starting a new one
+
+    Const SLOW_INTV = 300  ' sec, scan interval for slow sensors. Minimum value 30 seconds, max value 1800 sec
+    Const NDAYS_SLOW_CRD =  7 ' number of days to store in the slow data CRD file before starting a new one
+
+    Const STATS_INTV = 30  ' min, interval to store slow data
+    Const NDAYS_STATS_CPU = 1  ' Number of days of slow data to store on the CPU before writing to card
+    Const STATS_TABLE_SIZE = Ceiling((NDAYS_STATS_CPU*1440/STATS_INTV))  ' max number of records for a file
+    Const NDAYS_STATS_CRD = 30  ' Number of days to store in the slow data CRD file
+
+    ' IRGASON
+    '========
+    ' Green SDM1  / White SDM 2 / Red+Brown SDM 3 / Black + Shield G
+    Const SN_IRGASON = 2556
+    Const SDM_CLK_SPEED = 30  ' us
+    Const ADR_SDM_EC100 = 1
+    Const CHAN_C_EC100 = C1
+    Const IRGASON_N_OFFSET = 280.0  ' degrees, compass direction that sonic "faces"
+    Const Z_IRGASON = 3.13
+    Const Z_IRGASON_TEMP = 3.28
+
+    ' CNR4
+    '=====
+    ' SWIN: Red + / Blue - / Jumper to ag
+    ' SWOUT: White + / Black - / Jumper to ag
+    ' LWIN: Grey + / Yellow - / Jump to ag
+    ' LWOUT: Brown + / Green - / Jump to ag
+    ' Thermister: White SE / Black AG / Clear AG / 1kOhm resistor from SE to Vx
+    ' N.B. We're using a CNR4 shipped form OTT Hydromet, so we need to add our own 1kOhm completion resistor
+    Const SN_CNR4 = 244541
+    Const CHAN_DIFF_CNR4 = 1
+    Const CHAN_SE_CNR4 = 13
+    Const CHAN_EX_CNR4 = Vx4
+    Const SW_UPPER_MULT = 1000.0 / 12.6  ' uV W-1 m2 -> W m-2 mV-1
+    Const SW_LOWER_MULT = 1000.0 / 14.22
+    Const LW_UPPER_MULT = 1000.0 / 9.19
+    Const LW_LOWER_MULT = 1000.0 / 9.84
+    Const Z_CNR4 = 2.45
+
+    ' BaroVUE 10
+    '===========
+    Const SN_BV10 = 2384
+    Const SN_BV10_CHIP = 2282
+    Const CHAN_C_BV10 = C5
+    Const ADR_SDI12_BV10 = 1
+    Const CMD_SDI12_BV10 = "M1!"  ' switch to MC1 if the measurement time is too long
+    Const Z_BV10 = 1.25
+
+    ' HygroVUE 10
+    '============
+    Const SN_HV10 = "E6696"
+    Const CHAN_C_HV10 = C5  ' Brown 12V / White Data / Black G / Clear Shield
+    Const ADR_SDI12_HV10 = 2
+    Const CMD_SDI12_HV10 = "M3!"  ' switch to MC3 if the measurement time is too long
+    Const Z_HV10 = 2.85
+
+    ' SI-111 SS
+    '==========
+    Const SN_SI111 = 12032
+    Const CHAN_SE_SI111 = 12  ' Green
+    Const CHAN_EX_SI111 = Vx3  ' Red
+    Const CHAN_DIFF_SI111 = 5  ' White + / Black - / Blue + Clear AG
+    Const m2 = 91266.1
+    Const m1 = 10507600.0
+    Const m0 = 1641750000.0
+    Const b2 = 1175.15
+    Const b1 = -30650.0
+    Const b0 = -8708830.0
+    Const Z_SI111 = 2.45
+
+    ' Hydraprobes
+    '============
+    ' Red +12V / Black G / Blue Data
+    Const CMD_SDI12_HYDRA = "M!"
+    Const CHAN_SW12_HYDRA = SW12_1
+    Const CHAN_C_HYDRA = C7
+    Const ADR_SDI12_HYDRA = "012345"
+    Const NUM_HYDRA = Len(ADR_SDI12_HYDRA)
+    Const SN_B5 = 293768
+    Const SN_B10 = 293763
+    Const SN_B30 = 293764
+    Const SN_A5 = 293770
+    Const SN_A10 = 293771
+    Const SN_A30 = 293764
+
+    ' ' Wind Monitor
+    ' Not used
+    ' Const SN_RMY = 9999  ' placeholder
+    ' Const CHAN_P_RMY = P1
+    ' Const CHAN_SE_RMY = 14
+    ' Const CHAN_EX_RMY = Vx2
+    ' Const RMY_N_OFFSET = 0.0  ' compass direction that the north arrow points to on the wind meter. Should be 0.0 if mounted properly
+
+    ' PAR, SQ610
+    ' ====
+    Const SN_PAR = 1266
+    Const PAR_MULT = 100.0  ' umol m-2 s-1 mV-1
+    Const CHAN_DIFF_PAR = 8  ' White + / Black -
+    Const Z_SQ610 = 2.48
+
+    ' Volt116
+    Const SN_VOLT116 = 7731
+    Const ADR_CPI_VOLT116 = 1
+        ' HFP01 on Volt116
+        Const NUM_HFP = 3        
+        Const SN_HFP(NUM_HFP) = {24438, 24439, 24440}
+        Const HFP_MULT(NUM_HFP) = {1000.0/61.88, 1000.0/62.13, 1000.0/63.83}
+        Const CHAN_DIFF_HFP = 1 ' Green - / White + / Black AG
+        Const Z_HFP = -0.05
+
+EndConstTable
+
+'====================================
+' Defining meteorologic variables
+'====================================
+
+'IRGASON
+'=======
+' Raw data from EC100 command
+Public irgason(12)
+Alias irgason(1) = ux: Units ux = m s-1
+Alias irgason(2) = uy: Units uy = m s-1
+Alias irgason(3) = uz: Units uz = m s-1
+Alias irgason(4) = sonic_temp: Units sonic_temp = degC
+Alias irgason(5) = sonic_diag: Units sonic_diag = unitless
+Alias irgason(6) = rho_co2: Units rho_co2 = mg m-3
+Alias irgason(7) = rho_h2o: Units rho_h2o = g m-3
+Alias irgason(8) = irga_diag: Units irga_diag = unitless
+Alias irgason(9) = irgason_temp: Units irgason_temp = degC
+Alias irgason(10) = irgason_press: Units irgason_press = kPa
+Alias irgason(11) = co2_signal: Units co2_signal = unitless
+Alias irgason(12) = h2o_signal: Units h2o_signal = unitless
+Public irgason_ws: Units irgason_ws = m s-1
+Public irgason_wd: Units irgason_wd = deg
+
+Public sonic_flags(6) As Boolean
+Alias sonic_flags(1) = sonic_low_amp_flag
+Alias sonic_flags(2) = sonic_high_amp_flag
+Alias sonic_flags(3) = sonic_tracking_flag
+Alias sonic_flags(4) = sonic_hi_3_axis_dc_flag
+Alias sonic_flags(5) = sonic_acquiring_flag
+Alias sonic_flags(6) = sonic_cal_mem_err_flag
+
+Public irga_flags(23) As Boolean
+Alias irga_flags(1) = irga_bad_data_flag
+Alias irga_flags(2) = irga_sys_fault_flag
+Alias irga_flags(3) = irga_sys_startup_flag
+Alias irga_flags(4) = irga_motor_speed_flag
+Alias irga_flags(5) = irga_tec_temp_flag
+Alias irga_flags(6) = irga_light_power_flag
+Alias irga_flags(7) = irga_light_temp_flag
+Alias irga_flags(8) = irga_light_i_flag
+Alias irga_flags(9) = irga_power_off_flag
+Alias irga_flags(10) = irga_chan_err_flag
+Alias irga_flags(11) = irga_amb_temp_flag
+Alias irga_flags(12) = irga_amb_press_flag
+Alias irga_flags(13) = irga_co2i_flag
+Alias irga_flags(14) = irga_co2io_flag
+Alias irga_flags(15) = irga_h2oi_flag
+Alias irga_flags(16) = irga_h2o_io_flag
+Alias irga_flags(17) = irga_co2iovar_flag
+Alias irga_flags(18) = irga_h2oiovar_flag
+Alias irga_flags(19) = irga_co2ioratio_flag
+Alias irga_flags(20) = irga_h2oioratio_flag
+Alias irga_flags(21) = irga_cal_mem_err_flag
+Alias irga_flags(22) = irga_heater_ctrl_flag
+Alias irga_flags(23) = irga_diff_press_flag
+
+
+SDMBeginPort(CHAN_C_EC100)
+
+' Diagnostic flags to be computed
+Dim disable_sonic as Boolean  ' flags for computing averages
+Dim disable_irga as Boolean  ' flags for computing averages
+
+' Datalogger
+' ==========
+Public panel_temp: Units panel_temp = degC
+Public batt: Units batt = V
+
+' CNR4
+' =====
+' data
+Public cnr4_mV(4)
+Alias cnr4_mV(1) = sw_in_mV: Units sw_in_mV = mV
+Alias cnr4_mV(2) = sw_out_mV: Units sw_out_mV = mV
+Alias cnr4_mV(3) = lw_in_mV: Units lw_in_mV = mV
+Alias cnr4_mV(4) = lw_out_mV: Units lw_out_mV = mV
+Public cnr4(4)
+Alias cnr4(1) = sw_in: Units sw_in = W m-2
+Alias cnr4(2) = sw_out: Units sw_out = W m-2
+Alias cnr4(3) = lw_in: Units lw_in = W m-2
+Alias cnr4(4) = lw_out: Units lw_out = W m-2
+Public cnr4_temp: Units cnr4_temp = degC
+Dim cnr4_temp_k, Rs, Vs_Vx
+Dim disable_alb as Boolean
+Public alb: Units alb = pct
+
+' BaroVUE 10
+' ==========
+Public bv10(3)
+Alias bv10(1) = press: Units press = kPa
+Alias bv10(2) = bv10_temp: Units bv10_temp = degC
+Alias bv10(3) = bv10_diag: Units bv10_diag = unitless
+
+' HygroVUE 10
+' ===========
+Public hv10(4)
+Alias hv10(1) = temp: Units temp = degC
+Alias hv10(2) = rh: Units rh = pct
+Alias hv10(3) = dew_point: Units dew_point = degC
+Alias hv10(4) = vapor_press: Units vapor_press = kPa
+Public hv10_diag: Units hv10_diag = unitless
+Public sat_vapor_press: Units sat_vapor_press = kPa
+Public vpd: Units vpd = kPa
+Dim disable_hv10 as Boolean
+
+' SI-111 SS
+' ==========
+Public si111_mV(2)
+Alias si111_mV(1) = si111_temp: Units si111_temp = degC
+Alias si111_mV(2) = surf_temp_mV: Units surf_temp_mV = mV
+Public surf_temp: Units surf_temp = degC
+Dim m
+Dim b
+
+' HydraProbe
+' ==========
+' Hydraprobe outputs stored in a flat array, indexed in RMO
+Dim hydra(9)
+Public vwc(NUM_HYDRA): Units vwc = unitless
+Public soil_cond(NUM_HYDRA): Units soil_cond = S m-1
+Public soil_temp(NUM_HYDRA): Units soil_temp = degC
+Public soil_temp_F(NUM_HYDRA):  Units soil_temp_F = degF
+Public uncorr_soil_cond(NUM_HYDRA):  Units uncorr_soil_cond = S m-1
+Public uncorr_r_eps(NUM_HYDRA): Units uncorr_r_eps = unitless
+Public uncorr_i_eps(NUM_HYDRA): Units uncorr_i_eps = unitless
+Public r_eps(NUM_HYDRA): Units r_eps = unitless
+Public i_eps(NUM_HYDRA):  Units i_eps = unitless
+
+' ' RMY Wind Monitor
+' ' =================
+' Public ws : Units ws = m s-1
+' Public wd : Units wd = deg
+
+' PAR Sensor
+' ===========
+Public ppfd : Units ppfd = umol m-2 s-1
+
+' HFP01 Soil Heat Flux Plates
+' ===========================
+Public G(NUM_HFP): Units G = W m-2
+
+' Ameriflux variable names
+Alias surf_temp = T_CANOPY
+
+
+DataTable(FastData, TRUE, -1)
+    DataInterval(0, FAST_INTV, mSec, 0)
+    TableFile("CRD:"&Status.SerialNumber(1,1)&"_Fast", 64, -1, 0, NDAYS_FAST_CRD, Day, 0, 0)
+    ' N.B. The sensor noise of the IRGASON for the sonic temperature and CO2 density
+    ' measurements is such that using FP2 precision is acceptable.
+    ' Sonic temp RMSE noise: 0.025
+    ' FP2 precision (-80 to +80): 0.01
+    ' CO2 density RMSE noise: 0.2
+    ' FP2 precision (-800 to +800): 0.1
+    ' All other measurements require float32 precision (except diagnostics)
+    Sample(1, ux, IEEE4)
+    Sample(1, uy, IEEE4)
+    Sample(1, uz, IEEE4)
+    Sample(1, sonic_temp, FP2)
+    Sample(1, sonic_diag, UINT2)
+    Sample(1, rho_co2, FP2)
+    Sample(1, rho_h2o, IEEE4)
+    Sample(1, irga_diag, UINT4)
+EndTable
+
+DataTable(SlowStatsData, TRUE, STATS_TABLE_SIZE)
+    DataInterval(0, STATS_INTV, Min, 0)
+    TableFile("CRD:"&Status.SerialNumber(1,1)&"_SlowStats", 64, -1, 0, NDAYS_STATS_CRD, Day, 0, 0)
+
+    Minimum(1, batt, FP2, FALSE, FALSE)
+    Average(1, panel_temp, FP2, FALSE)
+
+    ' Summaries of fast data
+    Average(1, ux, IEEE4, disable_sonic)
+    Average(1, uy, IEEE4, disable_sonic)
+    Average(1, uz, IEEE4, disable_sonic)
+    Average(1, sonic_temp, IEEE4, disable_sonic)
+    Average(1, rho_co2, IEEE4, disable_irga)
+    Average(1, rho_h2o, IEEE4, disable_irga)
+    Average(1, irgason_temp, IEEE4, FALSE)
+    Average(1, irgason_press, IEEE4, FALSE)
+    Totalize(1, disable_sonic, UINT2, FALSE)
+    Totalize(1, disable_irga, UINT2, FALSE)
+    Average(1, irgason_ws, IEEE4, disable_sonic)
+    Maximum(1, irgason_ws, FP2, disable_sonic, FALSE)
+    WindVector(1, irgason_ws, irgason_wd, IEEE4, disable_sonic, 0, 0, 3)
+    FieldNames("irgason_wd_Avg")
+
+    ' CNR4 sw/lw in/out
+    Average(4, sw_in, IEEE4, FALSE)
+    Average(1, cnr4_temp, IEEE4, FALSE)
+    Average(1, alb, IEEE4, disable_alb)
+
+    ' Barovue10 temperature, pressure, diagnostic
+    Average(2, press, IEEE4, FALSE)
+
+    ' Hygrovue10, temp, rh, dp, vp
+    Average(4, temp, IEEE4, disable_hv10)
+    Average(1, sat_vapor_press, IEEE4, disable_hv10)
+    Average(1, vpd, IEEE4, disable_hv10)
+
+    ' SI-111 SS
+    Average(1, si111_temp, IEEE4, FALSE)
+    Average(1, surf_temp, IEEE4, FALSE)
+    
+    ' ' Wind Monitor
+    ' Average(1, ws, IEEE4, FALSE)
+    ' WindVector(1, ws, wd, IEEE4, FALSE, 0, 0, 3)
+    ' FieldNames("wd_Avg")
+    
+    ' PPFD
+    Average(1, ppfd, IEEE4, FALSE)
+    
+    ' REPEAT FOR STD
+    StdDev(1, ux, IEEE4, disable_sonic)
+    StdDev(1, uy, IEEE4, disable_sonic)
+    StdDev(1, uz, IEEE4, disable_sonic)
+    StdDev(1, sonic_temp, IEEE4, disable_sonic)
+    StdDev(1, rho_co2, IEEE4, disable_irga)
+    StdDev(1, rho_h2o, IEEE4, disable_irga)
+    StdDev(1, irgason_temp, IEEE4, FALSE)
+    StdDev(1, irgason_press, IEEE4, FALSE)
+    StdDev(1, irgason_ws, IEEE4, disable_sonic)
+    StdDev(4, sw_in, IEEE4, FALSE)
+    StdDev(1, cnr4_temp, IEEE4, FALSE)
+    StdDev(1, alb, IEEE4, disable_alb)
+    StdDev(2, press, IEEE4, FALSE)
+    StdDev(4, temp, IEEE4, FALSE)
+    StdDev(1, sat_vapor_press, IEEE4, FALSE)
+    StdDev(1, vpd, IEEE4, FALSE)
+    StdDev(1, si111_temp, IEEE4, FALSE)
+    StdDev(1, surf_temp, IEEE4, FALSE)
+    StdDev(1, ppfd, IEEE4, FALSE)
+
+    ' Soil Heat Fl
+    Average(NUM_HFP, G, IEEE4, False)
+    FieldNames("G_A_5cm_Avg,G_B_5cm_Avg,G_C_5cm_Avg")
+    ' Repeat for STD
+    StdDev(NUM_HFP, G, IEEE4, False)
+    FieldNames("G_A_5cm_Std,G_B_5cm_Std,G_C_5cm_Std")
+    
+    ' Hydraprobes
+    Average(NUM_HYDRA, vwc, IEEE4, False)
+    FieldNames("vwc_A_5cm_Avg,vwc_A_10cm_Avg,vwc_A_30cm_Avg,vwc_B_5cm_Avg,vwc_B_10cm_Avg,vwc_B_30cm_Avg")
+    Average(NUM_HYDRA, soil_temp, IEEE4, False)
+    FieldNames("soil_temp_A_5cm_Avg,soil_temp_A_10cm_Avg,soil_temp_A_30cm_Avg,soil_temp_B_5cm_Avg,soil_temp_B_10cm_Avg,soil_temp_B_30cm_Avg")
+    ' Repeat for STD
+    StdDev(NUM_HYDRA, vwc, IEEE4, False)
+    FieldNames("vwc_A_5cm_Std,vwc_A_10cm_Std,vwc_A_30cm_Std,vwc_B_5cm_Std,vwc_B_10cm_Std,vwc_B_30cm_Std")
+    StdDev(NUM_HYDRA, soil_temp, IEEE4, False)
+    FieldNames("soil_temp_A_5cm_Std,soil_temp_A_10cm_Std,soil_temp_A_30cm_Std,soil_temp_B_5cm_Std,soil_temp_B_10cm_Std,soil_temp_B_30cm_Std")
+
+EndTable
+
+DataTable(SlowRawData, TRUE, -1)
+    DataInterval(0, SLOW_INTV, Sec, 0)
+    TableFile("CRD:"&Status.SerialNumber(1,1)&"_SlowRaw", 64, -1, 0, NDAYS_SLOW_CRD, Day, 0, 0)
+
+    ' datalogger
+    Sample(1, batt, FP2)
+    Sample(1, panel_temp, FP2)
+    
+    ' Summaries of fast data
+    Sample(1, ux, IEEE4)
+    Sample(1, uy, IEEE4)
+    Sample(1, uz, IEEE4)
+    Sample(1, sonic_temp, IEEE4)
+    Sample(1, rho_co2, IEEE4)
+    Sample(1, rho_h2o, IEEE4)
+    Sample(1, irgason_temp, IEEE4)
+    Sample(1, irgason_press, IEEE4)
+    Sample(1, disable_sonic, UINT2)
+    Sample(1, disable_irga, UINT2)
+    Sample(1, irgason_ws, FP2)
+    Sample(1, irgason_wd, FP2)
+
+    ' cnr4 sw/lw in/out
+    Sample(4, sw_in, FP2)
+    Sample(4, sw_in_mV, FP2)
+    Sample(1, cnr4_temp, FP2)
+    Sample(1, alb, FP2)
+
+    ' bv10 tmperature, pressure, diagnostic
+    Sample(3, press, FP2)
+
+    ' hv10, temp, rh, dp, vp
+    Sample(4, temp, FP2)
+    Sample(1, hv10_diag, FP2)
+    Sample(1, sat_vapor_press, FP2)
+    Sample(1, vpd, FP2)
+
+    ' SI-111 SS
+    Sample(1, si111_temp, FP2)
+    Sample(1, surf_temp_mV, FP2)
+
+    ' ' Wind Monitor
+    ' Sample(1, ws, FP2)
+    ' Sample(1, wd, FP2)
+
+    ' PPFD
+    Sample(1, ppfd, FP2)
+
+    ' Soil Heat Flux
+    Sample(NUM_HFP, G, FP2)
+    FieldNames("G_A_5cm,G_B_5cm,G_C_5cm")
+
+    ' Hydraprobes
+    Sample(NUM_HYDRA, vwc, FP2)
+    FieldNames("vwc_A_5cm,vwc_A_10cm,vwc_A_30cm,vwc_B_5cm,vwc_B_10cm,vwc_B_30cm")
+    Sample(NUM_HYDRA, soil_cond, FP2)
+    FieldNames("soil_cond_A_5cm,soil_cond_A_10cm,soil_cond_A_30cm,soil_cond_B_5cm,soil_cond_B_10cm,soil_cond_B_30cm")
+    Sample(NUM_HYDRA, soil_temp, FP2)
+    FieldNames("soil_temp_A_5cm,soil_temp_A_10cm,soil_temp_A_30cm,soil_temp_B_5cm,soil_temp_B_10cm,soil_temp_B_30cm")
+    Sample(NUM_HYDRA, soil_temp_F, FP2)
+    FieldNames("soil_temp_F_A_5cm,soil_temp_F_A_10cm,soil_temp_F_A_30cm,soil_temp_F_B_5cm,soil_temp_F_B_10cm,soil_temp_F_B_30cm")
+    Sample(NUM_HYDRA, uncorr_soil_cond, FP2)
+    FieldNames("uncorr_soil_cond_A_5cm,uncorr_soil_cond_A_10cm,uncorr_soil_cond_A_30cm,uncorr_soil_cond_B_5cm,uncorr_soil_cond_B_10cm,uncorr_soil_cond_B_30cm")
+    Sample(NUM_HYDRA, uncorr_r_eps, FP2)
+    FieldNames("uncorr_r_eps_A_5cm,uncorr_r_eps_A_10cm,uncorr_r_eps_A_30cm,uncorr_r_eps_B_5cm,uncorr_r_eps_B_10cm,uncorr_r_eps_B_30cm")
+    Sample(NUM_HYDRA, uncorr_i_eps, FP2)
+    FieldNames("uncorr_i_eps_A_5cm,uncorr_i_eps_A_10cm,uncorr_i_eps_A_30cm,uncorr_i_eps_B_5cm,uncorr_i_eps_B_10cm,uncorr_i_eps_B_30cm")
+    Sample(NUM_HYDRA, r_eps, FP2)
+    FieldNames("r_eps_A_5cm,r_eps_A_10cm,r_eps_A_30cm,r_eps_B_5cm,r_eps_B_10cm,r_eps_B_30cm")
+    Sample(NUM_HYDRA, i_eps, FP2)
+    FieldNames("i_eps_A_5cm,i_eps_A_10cm,i_eps_A_30cm,i_eps_B_5cm,i_eps_B_10cm,i_eps_B_30cm")
+EndTable
+
+'====================================
+' Main Program
+'====================================
+Dim i
+Dim j
+BeginProg
+    SDMSpeed(SDM_CLK_SPEED)
+    Scan(FAST_INTV, mSec, FAST_SCAN_BUFFER_SIZE, 0)
+        EC100(irgason, ADR_SDM_EC100, 1)
+        
+        ' Pull out diagnostic bits for in-the-field troubleshooting
+        For j = 1 To 6
+            sonic_flags(j) = (sonic_diag AND 2^(j-1)) > 0
+            irga_flags(j) = (irga_diag AND 2^(j-1)) > 0
+        Next
+        For j = 7 To 23
+            irga_flags(j) = (irga_diag AND 2^(j-1)) > 0
+        Next
+
+        ' NOTE: ask campbell if amb temp/press directly affect the irgason measurements?
+        disable_sonic = FALSE
+        disable_irga = FALSE
+        disable_sonic = (sonic_diag <> 0)
+        disable_irga = (irga_diag <> 0)
+        If disable_sonic Then ux = NAN : uy = NAN : uz = NAN : sonic_temp = NAN
+        If disable_irga Then rho_co2 = NAN : rho_h2o = NAN
+        If irga_amb_temp_flag Then irgason_temp = NAN
+        If irga_amb_press_flag Then irgason_press = NAN
+        
+        
+        ' WS and direction from sonic in meteorological convention (source degrees CW from north)
+        irgason_ws = SQR(ux^2 + uy^2)
+        irgason_wd = (IRGASON_OFFSET - ATN2(uy, ux) + 360.0) MOD 360.0
+        ' irgason_wd = (-ATN2(-uy, -ux) - IRGASON_N_OFFSET + 1080.0) MOD 360.0
+
+
+        CallTable FastData
+    NextScan
+
+SlowSequence
+    Scan(SLOW_INTV, Sec, 7, 0)
+        PanelTemp(panel_temp, 60)
+        Battery(batt)
+           
+        ' Turn on power to certain ancillary sensors only if power is sufficient
+        If batt > 11.5 Then SW12(CHAN_SW12_HYDRA, 1, 1) Else SW12(CHAN_SW12_HYDRA, 0, 1)
+
+        ' CNR4
+        VoltDiff(cnr4_mV, 4,mV200C, CHAN_DIFF_CNR4, True, 0, 60, 1, 0)
+        BrHalf(Vs_Vx, 1,mV5000, CHAN_SE_CNR4, CHAN_EX_CNR4, 1, 2500, TRUE, 0, 250, 1.0, 0)
+        
+        Rs = 1000*(Vs_Vx/(1-Vs_Vx))
+        cnr4_temp = 1/(1.0295e-3+2.391e-4*LN(Rs)+1.568e-7*(LN(Rs))^3) - 273.15
+        cnr4_temp_k = cnr4_temp + 273.15
+
+        sw_in = sw_in_mV * SW_UPPER_MULT
+        sw_out = sw_out_mV * SW_LOWER_MULT
+        lw_in = (lw_in_mV * LW_UPPER_MULT) + (5.67e-8 * cnr4_temp_k^4)
+        lw_out = (lw_out_mV * LW_LOWER_MULT) + (5.67e-8 * (cnr4_temp_k^4))
+        disable_alb = (sw_in < 15) OR (sw_in < sw_out)
+        If disable_alb Then alb = NAN Else alb = sw_out / sw_in
+
+        ' BaroVUE and HygroVUE 10 press, temp, rh, dp, vp
+        SDI12Recorder(bv10, CHAN_C_BV10, ADR_SDI12_BV10, CMD_SDI12_BV10, 1, 0.0, -1)
+        SDI12Recorder(hv10, CHAN_C_HV10, ADR_SDI12_HV10, CMD_SDI12_HV10, 1, 0.0, -1)
+        hv10_diag = temp
+        disable_hv10 = (temp = -99.99 OR temp = -9999 OR rh = 0)
+        If disable_hv10 Then temp = NAN : rh = NAN : dew_point = NAN : vapor_press = NAN
+        sat_vapor_press = vapor_press/(rh/100)
+        vpd = sat_vapor_press - vapor_press
+
+        ' SI-111 SS
+        Therm109(si111_temp, 1, CHAN_SE_SI111, CHAN_EX_SI111, 0, 60, 1.0, 0.0)
+        VoltDiff(surf_temp_mV, 1, mV200, CHAN_DIFF_SI111, True, 0, 60, 1, 0)
+        m = m0 + (m1*si111_temp) + (m2*si111_temp^2)
+        b = b0 + (b1*si111_temp) + (b2*si111_temp^2)
+        ' Tsurf_K = (m*V + b + Tk^4)^(1/4)
+        surf_temp = SQR(SQR(m*surf_temp_mV + b + (si111_temp + 273.15)^4)) - 273.15
+
+        ' Hydraprobes
+        'SDI12Recorder(hydra, CHAN_C_HYDRA, ADR_SDI12_HYDRA, CMD_SDI12_HYDRA, 1.0, 0.0, -1,1)
+        For i=1 To NUM_HYDRA
+          Move(hydra, 9, NaN,1)
+          SDI12Recorder(hydra, CHAN_C_HYDRA, Mid(ADR_SDI12_HYDRA, i, 1), CMD_SDI12_HYDRA, 1.0, 0.0, -1)
+          Move(vwc(i), 1, hydra(1), 1)
+          Move(soil_cond(i), 1, hydra(2), 1)
+          Move(soil_temp(i), 1, hydra(3), 1)
+          Move(soil_temp_F(i), 1, hydra(4), 1)
+          Move(uncorr_soil_cond(i), 1, hydra(5), 1)
+          Move(uncorr_r_eps(i), 1, hydra(6), 1)
+          Move(uncorr_i_eps(i), 1, hydra(7), 1)
+          Move(r_eps(i), 1, hydra(8), 1)
+          Move(i_eps(i), 1, hydra(9), 1)
+        Next 
+
+        ' PPFD
+        VoltDiff(ppfd,1, mV200C,CHAN_DIFF_PAR, TRUE ,0,60,100.0,0)
+
+        ' Soil Heat Flux
+        CDM_VoltDiff(VOLT116, ADR_CPI_VOLT116, G, NUM_HFP,mV200C, CHAN_DIFF_HFP,True, 200, 250, HFP_MULT, 0)
+
+        CallTable(SlowRawData)
+        CallTable(SlowStatsData)
+    NextScan
+
+EndProg

@@ -265,6 +265,8 @@ rule install_eddypro:
 rule run_eddypro:
     input:
         project_file = f"{CONFIGS_DIR}/eddypro_configs/{EDDYPRO_PROJECT_NAME}_{EDDYPRO_RUN_ID}.eddypro",
+        eddypro_rp = EDDYPRO_RP,
+        eddypro_fcc = EDDYPRO_FCC,
     output:
         sentinel = f"{L2_EDDYPRO_DIR}/{EDDYPRO_PROJECT_NAME}/.eddypro_done"
     params:
