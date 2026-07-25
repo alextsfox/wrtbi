@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 import argparse
+import warnings
 
 import pandas as pd
 
@@ -12,24 +13,65 @@ class StartEnd:
     end: pd.Timestamp
 
 def main():
-    parser = argparse.ArgumentParser(description="Compute the mapping from output file names to input file names for the concat step of the pipeline.")
-    parser.add_argument("--input_files", nargs="+", type=Path, required=True, help="List of input files to consider for concatenation.")
-    parser.add_argument("--output_file", type=Path, required=True, help="Path to the output pickle file that will contain the concat mapping.")
-    parser.add_argument("--file_time_span", type=str, required=True, help="Time span for each output file (e.g., '1D' for daily files).")
-    parser.add_argument("--aq_freq", type=str, required=True, help="Frequency of data points in the output files (e.g., '30min' for 30 minute intervals).")
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description="Compute the mapping from output file names to input file names for the concat step of the pipeline.")
+    # parser.add_argument("--input_files", nargs="+", type=Path, required=True, help="List of input files to consider for concatenation.")
+    # parser.add_argument("--output_file", type=Path, required=True, help="Path to the output pickle file that will contain the concat mapping.")
+    # parser.add_argument("--file_time_span", type=str, required=True, help="Time span for each output file (e.g., '1D' for daily files).")
+    # parser.add_argument("--aq_freq", type=str, required=True, help="Frequency of data points in the output files (e.g., '30min' for 30 minute intervals).")
+    # args = parser.parse_args()
+
+    class Args:
+        def __init__(self):
+            self.input_files = ['L0b_converted/2026_06_04_64293_SlowRaw9.feather',
+                                'L0b_converted/2026_06_04_64293_SlowRaw11.feather',
+                                'L0b_converted/2026_06_04_64293_SlowRaw10.feather',
+                                'L0b_converted/2026_06_04_64293_SlowRaw12.feather',
+                                'L0b_converted/2026_06_04_64293_SlowRaw13.feather',
+                                'L0b_converted/2026_06_04_64293_SlowRaw14.feather',
+                                'L0b_converted/2026_06_04_64293_SlowRaw15.feather',
+                                'L0b_converted/2026_07_20_50004_SlowRaw9.feather',
+                                'L0b_converted/2026_07_20_50004_SlowRaw8.feather',
+                                'L0b_converted/2026_07_20_50004_SlowRaw10.feather',
+                                'L0b_converted/2026_07_20_50004_SlowRaw11.feather',
+                                'L0b_converted/2026_07_20_50004_SlowRaw6.feather',
+                                'L0b_converted/2026_07_20_50004_SlowRaw7.feather',
+                                'L0b_converted/2026_04_21_64293_SlowRaw8.feather',
+                                'L0b_converted/2026_04_21_64293_SlowRaw5.feather',
+                                'L0b_converted/2026_04_21_64293_SlowRaw7.feather',
+                                'L0b_converted/2026_04_21_64293_SlowRaw6.feather',
+                                'L0b_converted/2026_04_21_64293_SlowRaw2.feather',
+                                'L0b_converted/2026_04_21_64293_SlowRaw1.feather',
+                                'L0b_converted/2026_04_21_64293_SlowRaw0.feather',
+                                'L0b_converted/2026_06_23_50004_SlowRaw0.feather',
+                                'L0b_converted/2026_06_23_50004_SlowRaw1.feather',
+                                'L0b_converted/2026_06_23_50004_SlowRaw3.feather',
+                                'L0b_converted/2026_06_23_50004_SlowRaw2.feather',
+                                'L0b_converted/2026_06_23_50004_SlowRaw5.feather',
+                                'L0b_converted/2026_06_23_50004_SlowRaw4.feather']
+            self.output_file = None
+            self.file_time_span = "7d"
+            self.aq_freq = "5min"
+    args = Args()
 
     raw_start_end: dict[Path, StartEnd] = {}
     target_start_end: dict[str, StartEnd] = {}
 
     for file in args.input_files:
         tmp = pd.read_feather(file, columns=["TIMESTAMP"]).set_index("TIMESTAMP")
+        if tmp.empty:
+            warnings.warn(f"{file} contains an empty dataframe")
+            continue
         fstart, fend = tmp.index.min(), tmp.index.max()
+        if pd.isna(fstart) or pd.isna(fend):
+            warnings.warn(f"{file} contains corrupt timestamps")
+            continue
         raw_start_end[file] = StartEnd(fstart, fend)
     raw_start_end = dict(sorted(raw_start_end.items(), key=lambda item: item[1].start))
 
     record_start = list(raw_start_end.values())[0].start.floor(args.file_time_span)
+    # TODO: why does this fail????
     record_end = list(raw_start_end.values())[-1].end.ceil(args.file_time_span)
+
     target_start_end = {
         intvl.left.strftime(r"%Y_%m_%d_%Hh%Mm"): StartEnd(intvl.left, intvl.right - pd.Timedelta(args.aq_freq))
         for intvl in pd.interval_range(start=record_start, end=record_end, freq=args.file_time_span)
