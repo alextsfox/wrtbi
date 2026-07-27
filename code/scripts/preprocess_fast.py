@@ -37,6 +37,12 @@ def preprocess_fast_data(f: Path, args) -> None:
     fast[numeric_cols] = fast[numeric_cols].where(keep)
     fast[numeric_cols] = fast[numeric_cols].interpolate(method="linear", limit_direction="both", limit_area='inside', limit=2)
 
+    # remove obviously bad values
+    fast[["ux", "uy", "uz"]] = fast[["ux", "uy", "uz"]].where(fast[["ux", "uy", "uz"]].abs() < 100)
+    fast["sonic_temp"] = fast["sonic_temp"].where(fast["sonic_temp"].abs() < 60)
+    fast["rho_co2"] = fast["rho_co2"].where(fast["rho_co2"].between(0, 5000))
+    fast["rho_h2o"] = fast["rho_h2o"].where(fast["rho_h2o"].between(-10, 100))
+
     # filter out values based on diagnostic flags
     fast[["rho_co2", "rho_h2o"]] = fast[["rho_co2", "rho_h2o"]].where(fast["irga_diag"] == 0)
     fast[["ux", "uy", "uz", "sonic_temp"]] = fast[["ux", "uy", "uz", "sonic_temp"]].where(fast["sonic_diag"] == 0)
