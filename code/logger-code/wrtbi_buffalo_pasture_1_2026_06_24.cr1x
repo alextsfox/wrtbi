@@ -488,7 +488,7 @@ BeginProg
         
         ' WS and direction from sonic in meteorological convention (source degrees CW from north)
         irgason_ws = SQR(ux^2 + uy^2)
-        irgason_wd = (IRGASON_OFFSET - ATN2(uy, ux) + 360.0) MOD 360.0
+        irgason_wd = (IRGASON_N_OFFSET - ATN2(uy, ux) + 360.0) MOD 360.0
         ' irgason_wd = (-ATN2(-uy, -ux) - IRGASON_N_OFFSET + 1080.0) MOD 360.0
 
 
