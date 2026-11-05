@@ -22,6 +22,7 @@ def main():
     tend = tstart + pd.Timedelta(args.file_timespan) - pd.Timedelta(args.aq_freq)
     new_idx = pd.date_range(start=tstart, end=tend, freq=args.aq_freq)
 
+    df = df.loc[~df.index.duplicated(keep='last')]
     df = df.reindex(new_idx).sort_index()
 
     df.to_feather(args.out_file)
