@@ -14,7 +14,7 @@ import numpy as np
 
 import sys
 sys.path.append("/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/PostProc")
-from FluxFox.hf import despike_hf
+from FluxFox.hf import despike_mad as despike_hf
 
 def preprocess_fast_data(f: Path, args) -> None:
     print(f"Preprocessing {f}")
